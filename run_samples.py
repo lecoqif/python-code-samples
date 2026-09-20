@@ -15,7 +15,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SAMPLES = json.loads((ROOT / "samples.json").read_text())
-SAMPLE_NAMES = [*SAMPLES, "graph_crawler"]
+STANDALONE_TESTS = {
+    "graph_crawler": "concurrency/test_graph_crawler.py",
+    "bounded_map": "concurrency/test_bounded_map.py",
+}
+SAMPLE_NAMES = [*SAMPLES, *STANDALONE_TESTS]
 
 
 def run_tests(test: Path, *, cwd: Path, env: dict[str, str]) -> int:
@@ -41,10 +45,10 @@ def run_sample(name: str) -> int:
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
-    if name == "graph_crawler":
+    if name in STANDALONE_TESTS:
         env["PYTHONPATH"] = str(ROOT)
-        print("\ngraph_crawler — Python standard library", flush=True)
-        return run_tests(ROOT / "concurrency/test_graph_crawler.py", cwd=ROOT, env=env)
+        print(f"\n{name} — Python standard library", flush=True)
+        return run_tests(ROOT / STANDALONE_TESTS[name], cwd=ROOT, env=env)
 
     spec = SAMPLES[name]
     installed = importlib.metadata.version(spec["distribution"])

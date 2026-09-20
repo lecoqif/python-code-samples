@@ -1,11 +1,17 @@
 # Python code samples
 
-Five extensions to established Python libraries and a standalone concurrent
-graph crawler, with design notes and executable regression tests. Each library
-patch targets a pinned upstream revision, preserving its surrounding architecture.
+Five extensions to established Python libraries, a concurrent graph crawler,
+and bounded parallel maps, with design notes and executable regression tests.
+Each library patch targets a pinned upstream revision, preserving its surrounding
+architecture.
 
 ## Samples
 
+- **[Bounded parallel maps](concurrency/bounded_map.md)** — preserve input order
+  with bounded thread or async submissions, propagate failures, and wait for
+  worker cleanup on error or async cancellation.
+  [Implementation](concurrency/bounded_map.py) ·
+  [Tests](concurrency/test_bounded_map.py)
 - **[Concurrent graph crawler](concurrency/README.md)** — coordinate bounded
   parallel fetches, deduplicate discoveries, propagate failures, and clean up
   workers. [Implementation](concurrency/graph_crawler.py) ·
@@ -48,17 +54,17 @@ uv run --no-project python run_samples.py all
 
 Run one sample with `python run_samples.py groupby_nth` in the activated
 environment. Other names: `match_to_schema`, `resize`, `dropna`, `bounded_bucket`,
-`graph_crawler`.
+`graph_crawler`, `bounded_map`.
 
 The runner copies the installed package into a temporary directory under
 `.runs/`, checks and applies that sample's runtime patch, verifies the import
 location, and runs its tests in a subprocess. It leaves installed packages
 unchanged and removes the temporary copy afterward. The two Polars samples are
 tested independently. Documentation hunks are included for source integration
-and skipped when applying patches to wheels. The standalone crawler is tested
-directly, without applying a patch.
+and skipped when applying patches to wheels. The standalone concurrency samples
+are tested directly, without applying a patch.
 
-The feature suite currently passes **139 tests**. See
+The feature suite currently passes **166 tests**. See
 [validation details](VALIDATION.md) for coverage and limits. Running `pytest`
 directly against unpatched wheels will not exercise these extensions.
 

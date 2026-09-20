@@ -2,6 +2,8 @@
 
 [Implementation](graph_crawler.py) · [Tests](test_graph_crawler.py)
 
+Also in this directory: [bounded threaded and async maps](bounded_map.md).
+
 A standalone graph traversal using Python's standard library. It overlaps
 neighbor lookups, fetches each discovered node at most once, and propagates
 callback failures after worker cleanup.

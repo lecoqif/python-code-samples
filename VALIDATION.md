@@ -13,11 +13,13 @@ Tested locally on macOS with CPython 3.13.7 and the versions in
 - `groupby_nth`: 47 passed.
 - `match_to_schema`: 35 passed.
 - `graph_crawler`: 13 passed.
+- `bounded_map`: 27 passed.
 
-Total: **139 passed** in the complete sample run. Each library patch was applied
+Total: **166 passed** in the complete sample run. Each library patch was applied
 to a separate temporary copy of its pinned installed package, with an assertion
-that imports came from that patched copy. The standalone crawler was tested
-directly, including coordinated concurrency and a subprocess deadlock regression.
+that imports came from that patched copy. The standalone concurrency samples were
+tested directly, including bounded submissions, result ordering, failure cleanup,
+async cancellation, and a subprocess crawler deadlock regression.
 No installed package or original source checkout was modified.
 
 All five complete patches also passed `git apply --check --whitespace=error`
