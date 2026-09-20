@@ -49,17 +49,19 @@ result = frame.lazy().dropna(how="all").collect()
 assert result.height == 2
 ```
 
-The lazy method resolves column names and dtypes, builds one validity expression
-per selected column, sums valid values horizontally, and filters by the required
-count. This supports `how="any"`, `how="all"`, and explicit `thresh`, while
+The lazy method uses Polars' existing selector parser to resolve names and dtypes,
+builds one validity expression per selected column, sums valid values horizontally,
+and filters by the required count. This supports `how="any"`, `how="all"`, and explicit `thresh`, while
 retaining all original columns and row order. An empty subset has defined
 zero-valid-value semantics.
 
 Eighteen checks cover null/NaN behavior, subsets, thresholds, nested values,
-empty inputs, multiple chunks, argument validation, scans, streaming execution,
-and construction of a lazy plan without executing rows.
+empty inputs, multiple chunks, native selectors, argument conflicts, scans,
+streaming execution, and construction of a lazy plan without executing rows.
 
-`subset` accepts column names and sequences of names. Selector expressions are
-outside this sample's contract. It resolves the schema during planning; broader
-selector support should reuse Polars' selector expansion rather than introduce
-a second parsing system.
+`subset` follows the same selector conventions as `drop_nulls` and `drop_nans`,
+including collections of names, duplicate-name deduplication, and selectors.
+The only explicit argument checks are valid `how` values and mutual exclusion
+of `how` and `thresh`; column parsing and errors use the existing Polars machinery.
+The implementation resolves the schema during planning. Large-schema planning
+cost is a useful target for future measurement.

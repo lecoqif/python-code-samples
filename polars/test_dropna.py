@@ -1,3 +1,4 @@
+import polars.selectors as cs
 import pytest
 from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal
@@ -46,13 +47,8 @@ def test_nested_nulls_are_not_top_level_missing_values():
 @pytest.mark.parametrize(
     "kwargs, error",
     [
-        ({"subset": ["x", "x"]}, ValueError),
         ({"subset": [1]}, TypeError),
-        ({"subset": {"x"}}, TypeError),
         ({"subset": ["absent"], "thresh": 0}, ColumnNotFoundError),
-        ({"thresh": True}, TypeError),
-        ({"thresh": 1.0}, TypeError),
-        ({"thresh": -1}, ValueError),
         ({"thresh": 1, "how": "any"}, TypeError),
         ({"how": "invalid"}, ValueError),
     ],
@@ -60,6 +56,25 @@ def test_nested_nulls_are_not_top_level_missing_values():
 def test_argument_validation_even_for_empty_frames(kwargs, error):
     with pytest.raises(error):
         pl.LazyFrame(schema={"x": pl.Float64}).dropna(**kwargs)
+
+
+@pytest.mark.parametrize("subset", [["x", "x"], ("x", "x"), {"x"}, cs.float()])
+def test_subset_uses_native_selector_semantics(subset):
+    frame = pl.DataFrame({"x": [1.0, None, float("nan")], "y": [None, 2, 3]})
+    for candidate in (frame, frame.lazy()):
+        result = candidate.dropna(subset=subset)
+        threshold = candidate.dropna(subset=subset, thresh=2)
+        if isinstance(candidate, pl.LazyFrame):
+            result, threshold = result.collect(), threshold.collect()
+        assert_frame_equal(result, frame.head(1))
+        # Duplicate names select one column, so they cannot satisfy thresh=2.
+        assert_frame_equal(threshold, frame.head(0))
+
+
+def test_empty_selector_matches_empty_subset():
+    frame = pl.DataFrame({"x": [None, 1]})
+    assert_frame_equal(frame.dropna(subset=cs.string()), frame)
+    assert_frame_equal(frame.dropna(subset=cs.string(), how="all"), frame.head(0))
 
 
 def test_typed_empty_input_and_multiple_chunks():

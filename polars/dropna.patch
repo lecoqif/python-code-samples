@@ -1,7 +1,7 @@
 diff --git a/py-polars/src/polars/dataframe/frame.py b/py-polars/src/polars/dataframe/frame.py
 --- a/py-polars/src/polars/dataframe/frame.py
 +++ b/py-polars/src/polars/dataframe/frame.py
-@@ -6677,6 +6677,30 @@
+@@ -6677,6 +6677,29 @@
          """
          return self.head(n)
  
@@ -9,14 +9,14 @@ diff --git a/py-polars/src/polars/dataframe/frame.py b/py-polars/src/polars/data
 +        self,
 +        *,
 +        thresh: int | None = None,
-+        subset: str | Sequence[str] | None = None,
++        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
 +        how: Literal["any", "all"] | None = None,
 +    ) -> DataFrame:
 +        """Drop rows with top-level nulls or floating NaNs in selected columns.
 +
 +        By default every selected value must be valid. how="all" keeps rows
 +        with at least one valid value; thresh requires that many valid values
-+        and is mutually exclusive with how. subset accepts column names only.
++        and is mutually exclusive with how. subset accepts names and selectors.
 +        An empty subset keeps all rows unless how="all" or thresh is positive.
 +        Schema resolution is allowed, but the lazy method executes no rows.
 +        """
@@ -28,23 +28,13 @@ diff --git a/py-polars/src/polars/dataframe/frame.py b/py-polars/src/polars/data
 +            ._collect_eager(optimizations=QueryOptFlags._eager())
 +        )
 +
-+
      def drop_nans(
          self,
          subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
 diff --git a/py-polars/src/polars/lazyframe/frame.py b/py-polars/src/polars/lazyframe/frame.py
 --- a/py-polars/src/polars/lazyframe/frame.py
 +++ b/py-polars/src/polars/lazyframe/frame.py
-@@ -94,7 +94,7 @@
-     parse_into_dtype,
- )
- from polars.datatypes.group import DataTypeGroup
--from polars.exceptions import InvalidOperationError, PerformanceWarning
-+from polars.exceptions import ColumnNotFoundError, InvalidOperationError, PerformanceWarning
- from polars.lazyframe.engine import GPUEngine
- from polars.lazyframe.engine_config import _eager_engine, _select_engine
- from polars.lazyframe.group_by import LazyGroupBy
-@@ -8325,6 +8325,70 @@
+@@ -8325,6 +8325,52 @@
              parsed_subset = parse_into_list_of_expressions_require_selectors(subset)
          return self._from_pyldf(self._ldf.unique(maintain_order, parsed_subset, keep))
  
@@ -52,54 +42,36 @@ diff --git a/py-polars/src/polars/lazyframe/frame.py b/py-polars/src/polars/lazy
 +        self,
 +        *,
 +        thresh: int | None = None,
-+        subset: str | Sequence[str] | None = None,
++        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
 +        how: Literal["any", "all"] | None = None,
 +    ) -> LazyFrame:
 +        """Drop rows with top-level nulls or floating NaNs in selected columns.
 +
 +        By default every selected value must be valid. how="all" keeps rows
 +        with at least one valid value; thresh requires that many valid values
-+        and is mutually exclusive with how. subset accepts column names only.
++        and is mutually exclusive with how. subset accepts names and selectors.
 +        An empty subset keeps all rows unless how="all" or thresh is positive.
 +        Schema resolution is allowed, but the lazy method executes no rows.
 +        """
 +        if how is not None and how not in ("any", "all"):
 +            raise ValueError("how must be None, 'any', or 'all'")
 +
-+        if thresh is not None and (not isinstance(thresh, int) or isinstance(thresh, bool)):
-+            raise TypeError("thresh must be a Python int, excluding bool")
-+
-+        if thresh is not None and thresh < 0:
-+            raise ValueError("thresh must be nonnegative")
-+
 +        if how is not None and thresh is not None:
 +            raise TypeError("how and thresh are mutually exclusive")
 +
 +        schema = self.collect_schema()
-+        if subset is None:
-+            subset = schema.names()
-+
-+        if isinstance(subset, str):
-+            subset = [subset]
-+
-+        if not isinstance(subset, Sequence):
-+            raise TypeError("subset must be a column name or sequence of names")
-+        seen = set()
-+        for name in subset:
-+            if not isinstance(name, str):
-+                raise TypeError("subset entries must be strings")
-+            if name not in schema:
-+                raise ColumnNotFoundError(name)
-+            if name in seen:
-+                raise ValueError(f"duplicate subset column: {name}")
-+            seen.add(name)
++        names = (
++            schema.names()
++            if subset is None
++            else expand_selector(schema, parse_list_into_selector(subset))
++        )
 +
 +        if thresh is None:
-+            thresh = 1 if how == "all" else len(subset)
++            thresh = 1 if how == "all" else len(names)
 +
 +        valid_columns = []
 +
-+        for name in subset:
++        for name in names:
 +            column = F.col(name)
 +            mask = column.is_not_null()
 +
