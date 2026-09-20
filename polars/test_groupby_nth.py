@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import polars.selectors as cs
 import pytest
-from polars.exceptions import ColumnNotFoundError
+from polars.exceptions import ColumnNotFoundError, DuplicateError
 from polars.testing import assert_frame_equal
 
 import polars as pl
@@ -111,23 +111,16 @@ def test_nth_typed_empty_and_no_eligible_rows(dropna: Any) -> None:
 
 
 @pytest.mark.parametrize(
-    "n",
-    [True, False, np.int64(1), 1.5, "1", None, {1}, [True], [np.int64(1)], [0, "1"]],
+    "positions", [np.int64(1), [np.int64(1)], (np.int64(1),), [np.int32(1)]]
 )
 @pytest.mark.parametrize("empty", [False, True])
-def test_nth_invalid_positions(n: Any, empty: bool) -> None:
-    df = pl.DataFrame({"key": ["a"]})
+def test_nth_positions_use_native_integer_coercion(positions: Any, empty: bool) -> None:
+    df = pl.DataFrame({"key": ["a", "b", "a"], "value": [10, 20, 30]})
     if empty:
         df = df.head(0)
-    for frame in (df, df.lazy()):
-        with pytest.raises(TypeError):
-            frame.group_by("key").nth(n)
-
-
-@pytest.mark.parametrize("n", [2**63, -(2**63) - 1, [2**63], [-(2**63) - 1]])
-def test_nth_position_overflow(n: Any) -> None:
-    with pytest.raises(ValueError, match="64-bit"):
-        pl.LazyFrame(schema={"key": pl.String}).group_by("key").nth(n)
+    expected = df.tail(1) if not empty else df
+    assert_frame_equal(df.group_by("key").nth(positions), expected)
+    assert_frame_equal(df.lazy().group_by("key").nth(positions).collect(), expected)
 
 
 @pytest.mark.parametrize("dropna", [False, 0, "bad", [], {}])
@@ -136,18 +129,20 @@ def test_nth_invalid_dropna_even_with_empty_positions(dropna: Any) -> None:
         pl.LazyFrame(schema={"key": pl.String}).group_by("key").nth([], dropna=dropna)
 
 
-@pytest.mark.parametrize("keys", [[], ["key", "key"], ["absent"]])
+@pytest.mark.parametrize("keys", [["key", "key"], ["absent"]])
 @pytest.mark.parametrize("n", [0, []])
-def test_nth_key_validation_on_empty_input(keys: list[str], n: Any) -> None:
+def test_nth_uses_native_grouping_key_errors(keys: list[str], n: Any) -> None:
     df = pl.DataFrame(schema={"key": pl.String})
-    error = ColumnNotFoundError if keys == ["absent"] else ValueError
+    error = ColumnNotFoundError if keys == ["absent"] else DuplicateError
     for frame in (df, df.lazy()):
+        with pytest.raises(error):
+            frame.group_by(keys).agg(pl.len()).collect_schema()
         with pytest.raises(error):
             frame.group_by(keys).nth(n)
 
 
 @pytest.mark.parametrize(
-    "context", ["expression", "selector", "named", "generator", "having"]
+    "context", ["expression", "selector", "named", "generator", "having", "empty_keys"]
 )
 def test_nth_unsupported_context_preserves_aggregations(context: str) -> None:
     lf = pl.LazyFrame({"key": [1, 1, 2], "value": [10, 20, 30]})
@@ -159,8 +154,10 @@ def test_nth_unsupported_context_preserves_aggregations(context: str) -> None:
         group = lf.group_by(group="key")
     elif context == "generator":
         group = lf.group_by(name for name in ["key"])
-    else:
+    elif context == "having":
         group = lf.group_by("key").having(pl.len() > 1)
+    else:
+        group = lf.group_by([])
     expected = group.agg(pl.col("value").sum()).collect()
     with pytest.raises(NotImplementedError):
         group.nth(0)

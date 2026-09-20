@@ -25,9 +25,14 @@ missing-value filtering happens before numbering. A window expression computes
 each row's group position and group length; membership predicates select both
 positive and negative positions without rearranging rows.
 
-Sixty-four checks cover positions, missing keys, nulls/NaNs, nested payloads,
-group reuse, typed empty frames, validation, unsupported grouping contexts,
-streaming collection, scans, and lazy plan construction without row execution.
+Position values use Polars' expression coercion, including NumPy integer scalars.
+Native grouping schema resolution handles missing and duplicate keys. Explicit
+checks are limited to valid `dropna` values and the supported grouping context.
+
+Forty-seven checks cover positions, native integer coercion and key errors,
+nulls/NaNs, nested payloads, group reuse, typed empty frames, unsupported grouping
+contexts, streaming collection, scans, and lazy plan construction without row
+execution.
 
 The supported grouping keys are distinct existing column names. Expression
 keys, selectors, named keys, generators, temporal groups, and groups with

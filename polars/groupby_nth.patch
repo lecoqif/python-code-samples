@@ -10,7 +10,7 @@ diff --git a/py-polars/src/polars/dataframe/group_by.py b/py-polars/src/polars/d
  
  from polars import functions as F
  from polars._utils.convert import parse_as_duration_string
-@@ -506,6 +506,58 @@
+@@ -506,6 +506,57 @@
  
          return self._lgb().head(n)._collect_eager(optimizations=QueryOptFlags._eager())
  
@@ -26,10 +26,9 @@ diff --git a/py-polars/src/polars/dataframe/group_by.py b/py-polars/src/polars/d
 +        Parameters
 +        ----------
 +        n
-+            A Python integer or list/tuple of integers fitting signed 64-bit range.
++            An integer or list/tuple of integers, using Polars expression coercion.
 +            Negative positions count from the end. Out-of-bounds positions are
-+            skipped and each original row is emitted at most once. Booleans are
-+            not accepted.
++            skipped and each original row is emitted at most once.
 +        dropna
 +            None keeps every row eligible. "any" or "all" excludes rows with any
 +            or all values missing before assigning positions. Missing means a
@@ -72,7 +71,7 @@ diff --git a/py-polars/src/polars/dataframe/group_by.py b/py-polars/src/polars/d
 diff --git a/py-polars/src/polars/lazyframe/group_by.py b/py-polars/src/polars/lazyframe/group_by.py
 --- a/py-polars/src/polars/lazyframe/group_by.py
 +++ b/py-polars/src/polars/lazyframe/group_by.py
-@@ -1,11 +1,13 @@
+@@ -1,11 +1,12 @@
  from __future__ import annotations
  
 -from typing import TYPE_CHECKING
@@ -83,11 +82,10 @@ diff --git a/py-polars/src/polars/lazyframe/group_by.py b/py-polars/src/polars/l
  from polars._utils.parse import parse_into_list_of_expressions
  from polars._utils.wrap import wrap_df, wrap_ldf
 +from polars.datatypes import Int64
-+from polars.exceptions import ColumnNotFoundError
  
  if TYPE_CHECKING:
      import sys
-@@ -30,8 +32,17 @@
+@@ -30,8 +31,17 @@
  
      lgb: PyLazyGroupBy
  
@@ -106,7 +104,7 @@ diff --git a/py-polars/src/polars/lazyframe/group_by.py b/py-polars/src/polars/l
  
      def having(self, *predicates: IntoExpr | Iterable[IntoExpr]) -> LazyGroupBy:
          """
-@@ -73,6 +84,7 @@
+@@ -73,6 +83,7 @@
          """
          pyexprs = parse_into_list_of_expressions(*predicates)
          self.lgb = self.lgb.having(pyexprs)
@@ -114,7 +112,7 @@ diff --git a/py-polars/src/polars/lazyframe/group_by.py b/py-polars/src/polars/l
          return self
  
      def agg(
-@@ -313,6 +325,111 @@
+@@ -313,6 +324,90 @@
          """
          return wrap_ldf(self.lgb.head(n))
  
@@ -130,10 +128,10 @@ diff --git a/py-polars/src/polars/lazyframe/group_by.py b/py-polars/src/polars/l
 +        Parameters
 +        ----------
 +        n
-+            A Python integer or list/tuple of integers fitting signed 64-bit range.
++            An integer or list/tuple of integers, using Polars expression coercion.
 +            Positions are zero-based; negative positions count from the end.
 +            Out-of-bounds positions are skipped. Repeated positions and aliases
-+            select each row only once. Booleans are not accepted.
++            select each row only once.
 +        dropna
 +            Exclude rows with any or all values missing before assigning positions.
 +            Missing values are top-level nulls or floating NaNs across all original
@@ -165,42 +163,21 @@ diff --git a/py-polars/src/polars/lazyframe/group_by.py b/py-polars/src/polars/l
 +        │ 30    ┆ a   │
 +        └───────┴─────┘
 +        """
-+        if isinstance(n, int):
-+            positions = [n]
-+        elif isinstance(n, (list, tuple)):
-+            positions = list(n)
-+        else:
-+            msg = "n must be a Python int or a list/tuple of Python ints"
-+            raise TypeError(msg)
-+        for value in positions:
-+            if not isinstance(value, int) or isinstance(value, bool):
-+                msg = "n must contain only Python ints, not booleans"
-+                raise TypeError(msg)
-+            if not -(2**63) <= value < 2**63:
-+                msg = f"position does not fit a signed 64-bit integer: {value}"
-+                raise ValueError(msg)
-+        if dropna is not None and (
-+            not isinstance(dropna, str) or dropna not in ("any", "all")
-+        ):
++        positions = n if isinstance(n, (list, tuple)) else [n]
++        if dropna is not None and dropna not in ("any", "all"):
 +            msg = "dropna must be None, 'any', or 'all'"
 +            raise ValueError(msg)
 +
-+        if self._frame is None or self._keys is None or self._has_having:
++        if self._frame is None or not self._keys or self._has_having:
 +            msg = "nth requires ordinary column-name grouping without having predicates"
 +            raise NotImplementedError(msg)
-+        keys = self._keys
-+        if not keys or len(set(keys)) != len(keys):
-+            msg = "nth requires at least one key and no duplicate keys"
-+            raise ValueError(msg)
++        # Resolve the native grouping schema so duplicate/missing keys follow
++        # the same rules as other group operations, without executing rows.
++        self.agg().collect_schema()
 +        frame = self._frame
-+        schema = frame.collect_schema()
-+        for key in keys:
-+            if key not in schema:
-+                raise ColumnNotFoundError(key)
-+        if not positions:
-+            return frame.limit(0)
 +
 +        if dropna is not None:
++            schema = frame.collect_schema()
 +            missing = []
 +            for name, dtype in schema.items():
 +                column = F.col(name)
@@ -217,8 +194,8 @@ diff --git a/py-polars/src/polars/lazyframe/group_by.py b/py-polars/src/polars/l
 +
 +        # Positive and negative positions identify the same original rows. Filtering
 +        # preserves input order and naturally deduplicates repeated requests/aliases.
-+        position = F.int_range(F.len(), dtype=Int64).over(keys)
-+        size = F.len().cast(Int64).over(keys)
++        position = F.int_range(F.len(), dtype=Int64).over(self._keys)
++        size = F.len().cast(Int64).over(self._keys)
 +        return frame.filter(
 +            position.is_in(positions) | (position - size).is_in(positions)
 +        )

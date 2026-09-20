@@ -52,7 +52,7 @@ unchanged and removes the temporary copy afterward. The two Polars samples are
 tested independently. Documentation hunks are included for source integration
 and skipped when applying patches to wheels.
 
-The feature suite currently passes **133 tests**. See
+The feature suite currently passes **116 tests**. See
 [validation details](VALIDATION.md) for coverage and limits. Running `pytest`
 directly against unpatched wheels will not exercise these extensions.
 
