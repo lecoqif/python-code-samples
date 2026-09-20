@@ -11,10 +11,10 @@ Tested locally on macOS with CPython 3.13.7 and the versions in
 - `resize`: 15 passed.
 - `dropna`: 18 passed.
 - `groupby_nth`: 47 passed.
-- `match_to_schema`: 25 passed.
+- `match_to_schema`: 35 passed.
 
-Total: **116 passed** across the sample runs. The latest `groupby_nth` update was
-verified with `.venv/bin/python run_samples.py groupby_nth` (47 passed); the other
+Total: **126 passed** across the sample runs. The latest `match_to_schema` update
+was verified with `.venv/bin/python run_samples.py match_to_schema` (35 passed); the other
 sample results above remain from their most recent runs. Each sample was applied
 to a separate temporary copy of its pinned installed package, with an assertion that imports came from that
 patched copy. No installed package or original practice checkout was modified.

@@ -1,21 +1,13 @@
 diff --git a/pandas/core/frame.py b/pandas/core/frame.py
 --- a/pandas/core/frame.py
 +++ b/pandas/core/frame.py
-@@ -39,6 +39,7 @@
- import numpy as np
- from numpy import ma
- 
-+from pandas._libs.missing import NA
- from pandas._config import (
-     get_option,
-     using_copy_on_write,
-@@ -9887,6 +9888,109 @@
+@@ -9887,6 +9887,68 @@
  
          return result.__finalize__(self, method="explode")
  
 +    def match_to_schema(
 +        self,
-+        schema: Mapping[str, Dtype],
++        schema: Mapping[Hashable, Dtype],
 +        *,
 +        missing_columns: Literal["raise", "insert"] = "raise",
 +        extra_columns: Literal["raise", "drop"] = "raise",
@@ -26,81 +18,41 @@ diff --git a/pandas/core/frame.py b/pandas/core/frame.py
 +        Missing columns may be inserted if their dtype supports missing values;
 +        extra columns may be dropped. cast=True uses normal astype semantics,
 +        which need not be lossless. The input is unchanged on success or failure.
-+        Supports native NumPy integer, bool, float32/64, pandas nullable numeric
-+        and boolean dtypes, and Python-backed nullable strings. Labels must be
-+        unique strings. Row indexes (including duplicate labels) are preserved.
++        Dtypes follow pandas normalization, casting, and missing-value rules.
++        Column labels must be unique and flat. Row indexes (including duplicate
++        labels) and the column index name are preserved.
 +        Scalar mutations are isolated; nested Python objects are not deep-copied.
 +        """
-+        if not isinstance(schema, Mapping):
-+            raise TypeError("schema must be a mapping")
 +        if isinstance(self.columns, MultiIndex):
 +            raise TypeError("MultiIndex columns are not supported")
-+        if not all(isinstance(name, str) for name in self.columns):
-+            raise TypeError("input column labels must be strings")
 +        if not self.columns.is_unique:
 +            raise ValueError("input column labels must be unique")
 +        if missing_columns not in ("raise", "insert"):
 +            raise ValueError("missing_columns must be 'raise' or 'insert'")
 +        if extra_columns not in ("raise", "drop"):
 +            raise ValueError("extra_columns must be 'raise' or 'drop'")
-+        if not isinstance(cast, (bool, np.bool_)):
-+            raise TypeError("cast must be boolean")
 +
-+        existing_columns = set(self.columns)
++        dtypes = {name: pandas_dtype(dtype) for name, dtype in schema.items()}
++        target_columns = self.columns.reindex(list(dtypes))[0]
 +        if missing_columns == "raise":
-+            for name in schema:
-+                if name not in existing_columns:
-+                    raise ValueError(f"missing column: {name}")
++            missing = target_columns.difference(self.columns, sort=False)
++            if len(missing):
++                raise ValueError(f"missing columns: {missing.tolist()}")
 +        if extra_columns == "raise":
-+            for name in self.columns:
-+                if name not in schema:
-+                    raise ValueError(f"extra column: {name}")
-+
-+        dtypes = {}
-+        for name, specification in schema.items():
-+            if not isinstance(name, str):
-+                raise TypeError("schema keys must be strings")
-+            if specification is None:
-+                raise TypeError(f"missing dtype for {name}")
-+            dtype = pandas_dtype(specification)
-+            if isinstance(dtype, np.dtype):
-+                supported = dtype.isnative and (
-+                    (dtype.kind in "iu" and dtype.itemsize in (1, 2, 4, 8))
-+                    or (dtype.kind == "f" and dtype.itemsize in (4, 8))
-+                    or dtype.kind == "b"
-+                )
-+            elif isinstance(dtype, StringDtype):
-+                supported = dtype.storage == "python" and dtype.na_value is NA
-+            else:
-+                supported = isinstance(dtype, BaseMaskedDtype) and dtype.name in {
-+                    "Int8",
-+                    "Int16",
-+                    "Int32",
-+                    "Int64",
-+                    "UInt8",
-+                    "UInt16",
-+                    "UInt32",
-+                    "UInt64",
-+                    "Float32",
-+                    "Float64",
-+                    "boolean",
-+                }
-+            if not supported:
-+                raise TypeError(f"unsupported dtype {dtype} for {name}")
-+            dtypes[name] = dtype
++            extra = self.columns.difference(target_columns, sort=False)
++            if len(extra):
++                raise ValueError(f"extra columns: {extra.tolist()}")
 +
 +        columns = {}
 +        for name, dtype in dtypes.items():
-+            if name not in existing_columns:
-+                if isinstance(dtype, np.dtype):
-+                    if dtype.kind != "f":
-+                        raise TypeError(
-+                            f"{dtype} cannot represent a missing column: {name}"
-+                        )
-+                    missing = np.nan
-+                else:
-+                    missing = NA
-+                column = Series(missing, index=self.index, dtype=dtype)
++            if name not in self.columns:
++                # NumPy integers would upcast and bool would fill with True,
++                # rather than produce an all-missing column of the target dtype.
++                if isinstance(dtype, np.dtype) and dtype.kind in "iub":
++                    raise TypeError(
++                        f"{dtype} cannot represent a missing column: {name}"
++                    )
++                column = Series(index=self.index, dtype=dtype)
 +            else:
 +                column = self[name].copy(deep=True)
 +                if column.dtype != dtype:
@@ -111,10 +63,9 @@ diff --git a/pandas/core/frame.py b/pandas/core/frame.py
 +                    column = column.astype(dtype)
 +            columns[name] = column
 +
-+        result = DataFrame(columns, index=self.index.copy(deep=True))
-+        result.columns.name = self.columns.name
-+        return result
-+
++        return DataFrame(
++            columns, index=self.index.copy(deep=True), columns=target_columns
++        )
 +
      def unstack(self, level: IndexLabel = -1, fill_value=None, sort: bool = True):
          """

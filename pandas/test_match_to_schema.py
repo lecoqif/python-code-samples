@@ -78,9 +78,11 @@ def test_with_python_types():
     assert_frame_equal(result, frame)
 
 
-def test_object_dtype_raise():
-    with pytest.raises(TypeError):
-        pd.DataFrame({"x": [1]}).match_to_schema({"x": "object"}, cast=True)
+def test_object_dtype_uses_native_astype():
+    frame = pd.DataFrame({"x": [1]})
+    assert_frame_equal(
+        frame.match_to_schema({"x": "object"}, cast=True), frame.astype("object")
+    )
 
 
 @pytest.mark.parametrize("copy_on_write", [False, True])
@@ -132,9 +134,26 @@ def test_wide_frame_does_not_fragment():
     "dtype",
     [None, "object", "float16", "complex128", "datetime64[ns]", "category", ">i4"],
 )
-def test_unsupported_dtype_rejected_before_construction(dtype):
+def test_dtypes_follow_native_astype(dtype):
+    frame = pd.DataFrame({"x": [1, 2]})
+    assert_frame_equal(
+        frame.match_to_schema({"x": dtype}, cast=True), frame.astype(dtype)
+    )
+
+
+@pytest.mark.parametrize("dtype", ["object", "float16", "datetime64[ns]", "category"])
+def test_missing_columns_use_native_dtype_defaults(dtype):
+    index = pd.Index([20, 10, 20], name="row")
+    frame = pd.DataFrame(index=index)
+    result = frame.match_to_schema({"x": dtype}, missing_columns="insert")
+    expected = pd.DataFrame({"x": pd.Series(index=index, dtype=dtype)}, index=index)
+    assert_frame_equal(result, expected)
+    assert result["x"].isna().all()
+
+
+def test_invalid_dtype_uses_native_error():
     with pytest.raises(TypeError):
-        pd.DataFrame({"x": [1]}).match_to_schema({"x": dtype}, cast=True)
+        pd.DataFrame({"x": [1]}).match_to_schema({"x": "not-a-dtype"}, cast=True)
 
 
 @pytest.mark.parametrize("dtype", ["int64", "bool"])
@@ -161,10 +180,30 @@ def test_numpy_boolean_cast_and_dtype_objects():
     assert str(result["x"].dtype) == "Float64"
 
 
-@pytest.mark.parametrize(
-    "columns,error", [(["x", "x"], ValueError), (["x", 1], TypeError)]
-)
-def test_invalid_input_columns_cannot_be_hidden_by_dropping(columns, error):
-    frame = pd.DataFrame([[1, 2]], columns=columns)
-    with pytest.raises(error):
+def test_duplicate_columns_cannot_be_hidden_by_dropping():
+    frame = pd.DataFrame([[1, 2]], columns=["x", "x"])
+    with pytest.raises(ValueError):
         frame.match_to_schema({}, extra_columns="drop")
+
+
+@pytest.mark.parametrize("label", [1, ("value", "x"), float("nan")])
+def test_flat_labels_and_column_metadata_use_native_index_semantics(label):
+    columns = pd.Index([label, "other"], tupleize_cols=False, name="fields")
+    frame = pd.DataFrame([[1, 2]], columns=columns)
+    requested = float("nan") if isinstance(label, float) else label
+    result = frame.match_to_schema({requested: "int64"}, extra_columns="drop")
+    assert_frame_equal(result, frame.reindex(columns=[requested]))
+
+
+def test_multiindex_columns_remain_outside_supported_scope():
+    frame = pd.DataFrame([[1]], columns=pd.MultiIndex.from_tuples([("x", "value")]))
+    with pytest.raises(TypeError, match="MultiIndex"):
+        frame.match_to_schema({("x", "value"): "int64"})
+
+
+@pytest.mark.parametrize(
+    "kwargs", [{"missing_columns": "invalid"}, {"extra_columns": "invalid"}]
+)
+def test_invalid_policies_are_rejected(kwargs):
+    with pytest.raises(ValueError):
+        pd.DataFrame({"x": [1]}).match_to_schema({"x": "int64"}, **kwargs)

@@ -22,11 +22,11 @@ assert result.index.tolist() == [20, 10]
 
 ## Design
 
-Validate labels, policies, and normalized target dtypes before constructing the
-result. Existing columns are copied and optionally converted using `astype`;
-missing columns are built with their requested dtype and original index. A
-single DataFrame constructor assembles the columns, avoiding repeated insertion
-and wide-frame fragmentation.
+Use pandas' dtype normalization, `Index` operations, `Series` construction, and
+`astype` for dtype and label handling. Existing columns are copied and optionally
+converted; missing columns use pandas' native missing-value defaults for their
+dtype and the original row index. A single DataFrame constructor assembles the
+columns, avoiding repeated insertion and wide-frame fragmentation.
 
 The result preserves duplicate index labels, named MultiIndexes, row order,
 and `columns.name`. Scalar writes to either frame are isolated with pandas
@@ -34,14 +34,21 @@ Copy-on-Write enabled or disabled. A conversion failure leaves the input intact.
 
 ## Supported scope
 
-Labels must be unique strings. Target dtypes include native NumPy integer,
-bool, float32/64, pandas nullable numeric and boolean types, and Python-backed
-nullable strings. NumPy integer/bool columns cannot be inserted as all-missing,
-including in empty frames. An empty schema can retain all rows with zero columns.
+Column labels must be unique and flat; integer and tuple labels follow normal
+pandas index handling. MultiIndex columns remain outside this sample's scope.
+Target dtypes follow pandas' native support, including object, float16, complex,
+datetime, categorical, and nullable dtypes, without a separate allowlist.
 
-Twenty-five tests cover normal conversion, strict matching, name policies,
-MultiIndex metadata, empty inputs, invalid dtypes, mutation isolation, failure
-atomicity, and wide frames with performance warnings promoted to errors.
+Explicit checks protect the missing/extra-column policies, strict dtype matching,
+and column-shape requirements. NumPy integer/bool columns cannot be inserted as
+all-missing, including in empty frames: pandas would otherwise promote integers
+or fill boolean columns with `True`. An empty schema can retain all rows with
+zero columns.
+
+Thirty-five tests cover native dtype conversion and missing-value defaults,
+strict matching, name policies, flat labels, MultiIndex row metadata, empty
+inputs, invalid dtypes, mutation isolation, failure atomicity, and wide frames
+with performance warnings promoted to errors.
 
 Casting follows normal pandas semantics and can lose information. Nested
 mutable objects inside cells are not recursively copied. The implementation
