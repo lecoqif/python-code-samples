@@ -1,4 +1,4 @@
-"""Apply each patch to an isolated package copy and run its feature tests."""
+"""Run the library patches and standalone concurrency sample tests."""
 
 from __future__ import annotations
 
@@ -15,9 +15,37 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SAMPLES = json.loads((ROOT / "samples.json").read_text())
+SAMPLE_NAMES = [*SAMPLES, "graph_crawler"]
+
+
+def run_tests(test: Path, *, cwd: Path, env: dict[str, str]) -> int:
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-c",
+            str(ROOT / "pyproject.toml"),
+            "--confcutdir",
+            str(ROOT),
+            str(test),
+        ],
+        cwd=cwd,
+        env=env,
+        check=False,
+    ).returncode
 
 
 def run_sample(name: str) -> int:
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+    if name == "graph_crawler":
+        env["PYTHONPATH"] = str(ROOT)
+        print("\ngraph_crawler — Python standard library", flush=True)
+        return run_tests(ROOT / "concurrency/test_graph_crawler.py", cwd=ROOT, env=env)
+
     spec = SAMPLES[name]
     installed = importlib.metadata.version(spec["distribution"])
     if installed != spec["version"]:
@@ -55,10 +83,7 @@ def run_sample(name: str) -> int:
         )
         subprocess.run(["git", "apply", *includes, patch], cwd=checkout, check=True)
 
-        env = os.environ.copy()
         env["PYTHONPATH"] = str(pythonpath)
-        env["PYTHONDONTWRITEBYTECODE"] = "1"
-        env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
         # Verify the import location so an unpatched wheel cannot pass tests.
         subprocess.run(
             [
@@ -75,29 +100,16 @@ def run_sample(name: str) -> int:
             check=True,
         )
         print(f"\n{name} — {spec['distribution']} {installed}", flush=True)
-        return subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                "-q",
-                "-c",
-                str(ROOT / "pyproject.toml"),
-                "--confcutdir",
-                str(ROOT),
-                str(ROOT / spec["test"]),
-            ],
-            cwd=checkout,
-            env=env,
-            check=False,
-        ).returncode
+        return run_tests(ROOT / spec["test"], cwd=checkout, env=env)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("sample", choices=["all", *SAMPLES], default="all", nargs="?")
+    parser.add_argument(
+        "sample", choices=["all", *SAMPLE_NAMES], default="all", nargs="?"
+    )
     args = parser.parse_args()
-    names = list(SAMPLES) if args.sample == "all" else [args.sample]
+    names = SAMPLE_NAMES if args.sample == "all" else [args.sample]
     results = {name: run_sample(name) for name in names}
     print(
         "\n"

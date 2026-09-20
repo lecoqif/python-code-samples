@@ -1,11 +1,15 @@
 # Python code samples
 
-Five practice extensions to established Python libraries, with focused patches,
-design notes, and executable regression tests. Each patch targets a pinned
-upstream revision, preserving the surrounding library architecture.
+Five extensions to established Python libraries and a standalone concurrent
+graph crawler, with design notes and executable regression tests. Each library
+patch targets a pinned upstream revision, preserving its surrounding architecture.
 
 ## Samples
 
+- **[Concurrent graph crawler](concurrency/README.md)** — coordinate bounded
+  parallel fetches, deduplicate discoveries, propagate failures, and clean up
+  workers. [Implementation](concurrency/graph_crawler.py) ·
+  [Tests](concurrency/test_graph_crawler.py)
 - **[pandas: schema matching](pandas/README.md)** — align a DataFrame to an
   ordered schema, validate dtypes, insert missing columns, and preserve indexes
   and mutation isolation. [Implementation](pandas/match_to_schema.patch) ·
@@ -43,16 +47,18 @@ uv run --no-project python run_samples.py all
 ```
 
 Run one sample with `python run_samples.py groupby_nth` in the activated
-environment. Other names: `match_to_schema`, `resize`, `dropna`, `bounded_bucket`.
+environment. Other names: `match_to_schema`, `resize`, `dropna`, `bounded_bucket`,
+`graph_crawler`.
 
 The runner copies the installed package into a temporary directory under
 `.runs/`, checks and applies that sample's runtime patch, verifies the import
 location, and runs its tests in a subprocess. It leaves installed packages
 unchanged and removes the temporary copy afterward. The two Polars samples are
 tested independently. Documentation hunks are included for source integration
-and skipped when applying patches to wheels.
+and skipped when applying patches to wheels. The standalone crawler is tested
+directly, without applying a patch.
 
-The feature suite currently passes **126 tests**. See
+The feature suite currently passes **139 tests**. See
 [validation details](VALIDATION.md) for coverage and limits. Running `pytest`
 directly against unpatched wheels will not exercise these extensions.
 
@@ -72,8 +78,8 @@ versions, paths, and test entry points are recorded in [samples.json](samples.js
 
 ## Attribution
 
-The surrounding APIs and implementation context come from pandas, Polars,
-cachetools, and more-itertools. These are practice patches against their source
-trees. Each project directory includes its upstream license; see
+The library APIs and implementation context come from pandas, Polars,
+cachetools, and more-itertools. The five patches target their source trees.
+Each upstream project directory includes its license; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Original repository material is
 MIT-licensed, with upstream portions retaining their original license terms.

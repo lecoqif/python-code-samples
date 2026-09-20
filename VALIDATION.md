@@ -12,12 +12,13 @@ Tested locally on macOS with CPython 3.13.7 and the versions in
 - `dropna`: 18 passed.
 - `groupby_nth`: 47 passed.
 - `match_to_schema`: 35 passed.
+- `graph_crawler`: 13 passed.
 
-Total: **126 passed** across the sample runs. The latest `match_to_schema` update
-was verified with `.venv/bin/python run_samples.py match_to_schema` (35 passed); the other
-sample results above remain from their most recent runs. Each sample was applied
-to a separate temporary copy of its pinned installed package, with an assertion that imports came from that
-patched copy. No installed package or original practice checkout was modified.
+Total: **139 passed** in the complete sample run. Each library patch was applied
+to a separate temporary copy of its pinned installed package, with an assertion
+that imports came from that patched copy. The standalone crawler was tested
+directly, including coordinated concurrency and a subprocess deadlock regression.
+No installed package or original source checkout was modified.
 
 All five complete patches also passed `git apply --check --whitespace=error`
 against the corresponding pinned upstream source files, including documentation
