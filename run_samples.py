@@ -1,4 +1,4 @@
-"""Run the library patches and standalone concurrency sample tests."""
+"""Run the library patches and standalone sample tests."""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ SAMPLES = json.loads((ROOT / "samples.json").read_text())
 STANDALONE_TESTS = {
     "graph_crawler": "concurrency/test_graph_crawler.py",
     "bounded_map": "concurrency/test_bounded_map.py",
+    "tokenizer": "tokenization/test_tokenizer.py",
+    "replicated_reader": "replicated_reader/test_reader.py",
 }
 SAMPLE_NAMES = [*SAMPLES, *STANDALONE_TESTS]
 

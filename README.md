@@ -1,12 +1,22 @@
 # Python code samples
 
-Five extensions to established Python libraries, a concurrent graph crawler,
-and bounded parallel maps, with design notes and executable regression tests.
+Five extensions to established Python libraries and standalone samples covering
+concurrency, tokenization, and replicated reads, with design notes and executable tests.
 Each library patch targets a pinned upstream revision, preserving its surrounding
 architecture.
 
+Related project: [Grounded tool agent](https://github.com/lecoqif/grounded-tool-agent),
+a reporting agent with typed tools, evidence validation, and an offline demo.
+
 ## Samples
 
+- **[Longest-match vocabulary tokenizer](tokenization/README.md)** — compare
+  reference and trie implementations, handle unknown input, and verify both
+  against generated cases. Includes a reproducible benchmark.
+  [Implementation](tokenization/tokenizer.py) · [Tests](tokenization/test_tokenizer.py)
+- **[Replicated snapshot reader](replicated_reader/README.md)** — select a
+  cross-region quorum under a generation bound and commit output atomically.
+  [Implementation](replicated_reader/core.py) · [Tests](replicated_reader/test_reader.py)
 - **[Bounded parallel maps](concurrency/bounded_map.md)** — preserve input order
   with bounded thread or async submissions, propagate failures, and wait for
   worker cleanup on error or async cancellation.
@@ -54,17 +64,17 @@ uv run --no-project python run_samples.py all
 
 Run one sample with `python run_samples.py groupby_nth` in the activated
 environment. Other names: `match_to_schema`, `resize`, `dropna`, `bounded_bucket`,
-`graph_crawler`, `bounded_map`.
+`graph_crawler`, `bounded_map`, `tokenizer`, `replicated_reader`.
 
 The runner copies the installed package into a temporary directory under
 `.runs/`, checks and applies that sample's runtime patch, verifies the import
 location, and runs its tests in a subprocess. It leaves installed packages
 unchanged and removes the temporary copy afterward. The two Polars samples are
 tested independently. Documentation hunks are included for source integration
-and skipped when applying patches to wheels. The standalone concurrency samples
+and skipped when applying patches to wheels. The standalone samples
 are tested directly, without applying a patch.
 
-The feature suite currently passes **166 tests**. See
+The feature suite currently passes **215 tests**. See
 [validation details](VALIDATION.md) for coverage and limits. Running `pytest`
 directly against unpatched wheels will not exercise these extensions.
 
