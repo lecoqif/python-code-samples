@@ -1,0 +1,65 @@
+diff --git a/src/cachetools/__init__.py b/src/cachetools/__init__.py
+--- a/src/cachetools/__init__.py
++++ b/src/cachetools/__init__.py
+@@ -20,6 +20,7 @@
+ import heapq
+ import random
+ import time
++from typing import Any
+ 
+ from . import keys
+ 
+@@ -140,6 +141,24 @@
+         else:
+             self[key] = value = default
+         return value
++
++    def resize(self, maxsize: int | float) -> tuple[tuple[Any, Any], ...]:
++        """Change capacity, returning live evictions in this cache's policy order.
++
++        Expired entries are removed separately by timed caches. Weighted caches
++        measure capacity using getsizeof, rather than their number of entries.
++        User-defined popitem failures are propagated; earlier evictions are not
++        rolled back. External synchronization is required for concurrent access.
++        """
++        if not isinstance(maxsize, (int, float)) or isinstance(maxsize, bool):
++            raise TypeError("maxsize must be an int or float, excluding bool")
++        if maxsize != maxsize or maxsize < 0:
++            raise ValueError("maxsize must be nonnegative and not NaN")
++        evicted = []
++        while self.__currsize > maxsize:
++            evicted.append(self.popitem())
++        self.__maxsize = maxsize
++        return tuple(evicted)
+ 
+     # Although the MutableMapping.clear() default implementation works
+     # perfectly well, it calls popitem() in a loop until the cache is
+@@ -437,6 +456,17 @@
+     def setdefault(self, *args, **kwargs):
+         with self.__timer:
+             return Cache.setdefault(self, *args, **kwargs)
++
++    def resize(self, maxsize: int | float) -> tuple[tuple[Any, Any], ...]:
++        """Expire entries and resize with one frozen timer value."""
++        # Validate before expiration, so invalid requests cannot mutate the cache.
++        if not isinstance(maxsize, (int, float)) or isinstance(maxsize, bool):
++            raise TypeError("maxsize must be an int or float, excluding bool")
++        if maxsize != maxsize or maxsize < 0:
++            raise ValueError("maxsize must be nonnegative and not NaN")
++        with self.__timer as time:
++            self.expire(time)
++            return super().resize(maxsize)
+ 
+     def clear(self):
+         # Subclasses must override to also reset their own time-tracking
+diff --git a/src/cachetools/__init__.pyi b/src/cachetools/__init__.pyi
+--- a/src/cachetools/__init__.pyi
++++ b/src/cachetools/__init__.pyi
+@@ -52,6 +52,7 @@
+     @overload
+     def pop(self, key: _KT, default: _VT | _T) -> _VT | _T: ...
+     def setdefault(self, key: _KT, default: _VT | None = None) -> _VT: ...
++    def resize(self, maxsize: int | float) -> tuple[tuple[_KT, _VT], ...]: ...
+     @property
+     def maxsize(self) -> float: ...
+     @property

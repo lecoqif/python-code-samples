@@ -1,0 +1,73 @@
+{
+  "bounded_bucket": {
+    "module": "more_itertools",
+    "distribution": "more-itertools",
+    "version": "11.1.0",
+    "upstream": "https://github.com/more-itertools/more-itertools",
+    "commit": "2fe1b2eeb9d75f994113fe3ac76d14b6bcd6fb10",
+    "pythonpath": ".",
+    "patch": "more_itertools/bounded_bucket.patch",
+    "test": "more_itertools/test_bounded_bucket.py",
+    "files": [
+      "more_itertools/more.py"
+    ]
+  },
+  "resize": {
+    "module": "cachetools",
+    "distribution": "cachetools",
+    "version": "7.1.8",
+    "upstream": "https://github.com/tkem/cachetools",
+    "commit": "4500e3d04288738d25acbb4973eb3c3e1bf41db9",
+    "pythonpath": "src",
+    "patch": "cachetools/resize.patch",
+    "test": "cachetools/test_resize.py",
+    "files": [
+      "src/cachetools/__init__.py",
+      "src/cachetools/__init__.pyi"
+    ]
+  },
+  "dropna": {
+    "module": "polars",
+    "distribution": "polars",
+    "version": "1.44.2",
+    "upstream": "https://github.com/pola-rs/polars",
+    "commit": "1bd8ec12f42d40fcec62badf32ef2177d2377d8d",
+    "pythonpath": "py-polars/src",
+    "patch": "polars/dropna.patch",
+    "test": "polars/test_dropna.py",
+    "files": [
+      "py-polars/src/polars/dataframe/frame.py",
+      "py-polars/src/polars/lazyframe/frame.py"
+    ]
+  },
+  "groupby_nth": {
+    "module": "polars",
+    "distribution": "polars",
+    "version": "1.44.2",
+    "upstream": "https://github.com/pola-rs/polars",
+    "commit": "1bd8ec12f42d40fcec62badf32ef2177d2377d8d",
+    "pythonpath": "py-polars/src",
+    "patch": "polars/groupby_nth.patch",
+    "test": "polars/test_groupby_nth.py",
+    "files": [
+      "py-polars/src/polars/dataframe/group_by.py",
+      "py-polars/src/polars/lazyframe/group_by.py",
+      "py-polars/src/polars/lazyframe/frame.py",
+      "py-polars/docs/source/reference/dataframe/group_by.rst",
+      "py-polars/docs/source/reference/lazyframe/group_by.rst"
+    ]
+  },
+  "match_to_schema": {
+    "module": "pandas",
+    "distribution": "pandas",
+    "version": "2.3.3",
+    "upstream": "https://github.com/pandas-dev/pandas",
+    "commit": "9c8bc3e55188c8aff37207a74f1dd144980b8874",
+    "pythonpath": ".",
+    "patch": "pandas/match_to_schema.patch",
+    "test": "pandas/test_match_to_schema.py",
+    "files": [
+      "pandas/core/frame.py"
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+cachetools==7.1.8
+more-itertools==11.1.0
+polars==1.44.2
+pandas==2.3.3
+numpy==2.3.5
+pytest==8.4.2

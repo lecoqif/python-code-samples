@@ -1,0 +1,130 @@
+diff --git a/more_itertools/more.py b/more_itertools/more.py
+--- a/more_itertools/more.py
++++ b/more_itertools/more.py
+@@ -1127,6 +1127,26 @@
+         (seq[i : i + L], i, i + L) for L in r for i in range(len(seq) - L + 1)
+     )
+ 
++class _BucketIterator:
++    """Keep a child usable after BufferError or a transient source failure."""
++
++    def __init__(self, parent, value) -> None:
++        self._parent = parent
++        self._value = value
++        self._is_finished = False
++
++    def __iter__(self):
++        return self
++
++    def __next__(self):
++        if self._is_finished:
++            raise StopIteration
++
++        try:
++            return next(self._parent._get_values(self._value))
++        except StopIteration:
++            self._is_finished = True
++            raise
+ 
+ class bucket:
+     """Wrap *iterable* and return an object that buckets the iterable into
+@@ -1169,13 +1189,33 @@
+     with the same key are already adjacent, :func:`groupby_transform`
+     or :func:`itertools.groupby` can be used without any caching overhead.
+ 
+-    """
+-
+-    def __init__(self, iterable, key, validator=None):
++    Set *max_cached* to a positive Python integer to bound buffered payloads.
++    At capacity, operations needing a source read raise BufferError before
++    consuming input. Drain a cached child and retry the same child iterator.
++    The default None preserves unlimited buffering. The bound does not limit
++    retained key metadata. Source callback failures do not roll back reads.
++
++    """
++
++    def __init__(self, iterable, key, validator=None, *, max_cached=None):
++        if max_cached is not None:
++            if (
++                not isinstance(max_cached, int)
++                or isinstance(max_cached, bool)
++                or max_cached <= 0
++            ):
++                raise ValueError("max_cached must be a positive Python int or None")
+         self._it = iter(iterable)
+         self._key = key
+         self._cache = defaultdict(deque)
+         self._validator = validator or (lambda x: True)
++        self._max_cached = max_cached
++        self._cache_size = 0
++
++    @property
++    def cached_count(self):
++        """Number of buffered payloads shared across all child iterators."""
++        return self._cache_size
+ 
+     def __contains__(self, value):
+         if not self._validator(value):
+@@ -1187,6 +1227,7 @@
+             return False
+         else:
+             self._cache[value].appendleft(item)
++            self._cache_size += 1
+ 
+         return True
+ 
+@@ -1200,11 +1241,19 @@
+             # If we've cached some items that match the target value, emit
+             # the first one and evict it from the cache.
+             if self._cache[value]:
++                self._cache_size -= 1
+                 yield self._cache[value].popleft()
+             # Otherwise we need to advance the parent iterator to search for
+             # a matching item, caching the rest.
+             else:
+                 while True:
++                    if (
++                        self._max_cached is not None
++                        and self._cache_size == self._max_cached
++                    ):
++                        raise BufferError(
++                            "bucket buffer is full; drain a cached child first"
++                        )
+                     try:
+                         item = next(self._it)
+                     except StopIteration:
+@@ -1215,12 +1264,24 @@
+                         break
+                     elif self._validator(item_value):
+                         self._cache[item_value].append(item)
++                        self._cache_size += 1
+ 
+     def __iter__(self):
+-        for item in self._it:
++        while True:
++            if self._max_cached is not None and self._cache_size == self._max_cached:
++                raise BufferError("bucket buffer is full; drain a cached child first")
++
++            try:
++                item = next(self._it)
++
++            except StopIteration:
++                break
++
+             item_value = self._key(item)
++
+             if self._validator(item_value):
+                 self._cache[item_value].append(item)
++                self._cache_size += 1
+ 
+         return iter(self._cache)
+ 
+@@ -1228,7 +1289,7 @@
+         if not self._validator(value):
+             return iter(())
+ 
+-        return self._get_values(value)
++        return _BucketIterator(self, value)
+ 
+ 
+ def spy(iterable, n=1):

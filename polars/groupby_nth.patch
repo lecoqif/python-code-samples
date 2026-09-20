@@ -1,0 +1,270 @@
+diff --git a/py-polars/src/polars/dataframe/group_by.py b/py-polars/src/polars/dataframe/group_by.py
+--- a/py-polars/src/polars/dataframe/group_by.py
++++ b/py-polars/src/polars/dataframe/group_by.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from itertools import chain
+-from typing import TYPE_CHECKING, Any
++from typing import TYPE_CHECKING, Any, Literal
+ 
+ from polars import functions as F
+ from polars._utils.convert import parse_as_duration_string
+@@ -506,6 +506,58 @@
+ 
+         return self._lgb().head(n)._collect_eager(optimizations=QueryOptFlags._eager())
+ 
++    def nth(
++        self,
++        n: int | list[int] | tuple[int, ...],
++        *,
++        dropna: Literal["any", "all"] | None = None,
++    ) -> DataFrame:
++        """
++        Select original rows by their position within each group.
++
++        Parameters
++        ----------
++        n
++            A Python integer or list/tuple of integers fitting signed 64-bit range.
++            Negative positions count from the end. Out-of-bounds positions are
++            skipped and each original row is emitted at most once. Booleans are
++            not accepted.
++        dropna
++            None keeps every row eligible. "any" or "all" excludes rows with any
++            or all values missing before assigning positions. Missing means a
++            top-level null or floating NaN, including in grouping columns.
++
++        Returns
++        -------
++        DataFrame
++            Selected rows in original input order, with unchanged columns and dtypes.
++
++        See Also
++        --------
++        LazyGroupBy.nth : Lazy implementation and supported grouping contexts.
++
++        Examples
++        --------
++        >>> df = pl.DataFrame({"value": [10, 20, 30], "key": ["a", "b", "a"]})
++        >>> df.group_by("key").nth(-1)
++        shape: (2, 2)
++        ┌───────┬─────┐
++        │ value ┆ key │
++        │ ---   ┆ --- │
++        │ i64   ┆ str │
++        ╞═══════╪═════╡
++        │ 20    ┆ b   │
++        │ 30    ┆ a   │
++        └───────┴─────┘
++        """
++        from polars.lazyframe.opt_flags import QueryOptFlags
++
++        return (
++            self._lgb()
++            .nth(n, dropna=dropna)
++            ._collect_eager(optimizations=QueryOptFlags._eager())
++        )
++
+     def tail(self, n: int = 5) -> DataFrame:
+         """
+         Get the last `n` rows of each group.
+diff --git a/py-polars/src/polars/lazyframe/group_by.py b/py-polars/src/polars/lazyframe/group_by.py
+--- a/py-polars/src/polars/lazyframe/group_by.py
++++ b/py-polars/src/polars/lazyframe/group_by.py
+@@ -1,11 +1,13 @@
+ from __future__ import annotations
+ 
+-from typing import TYPE_CHECKING
++from typing import TYPE_CHECKING, Literal
+ 
+ from polars import functions as F
+ from polars._utils.deprecation import deprecated
+ from polars._utils.parse import parse_into_list_of_expressions
+ from polars._utils.wrap import wrap_df, wrap_ldf
++from polars.datatypes import Int64
++from polars.exceptions import ColumnNotFoundError
+ 
+ if TYPE_CHECKING:
+     import sys
+@@ -30,8 +32,17 @@
+ 
+     lgb: PyLazyGroupBy
+ 
+-    def __init__(self, lgb: PyLazyGroupBy) -> None:
++    def __init__(
++        self,
++        lgb: PyLazyGroupBy,
++        *,
++        frame: LazyFrame | None = None,
++        keys: tuple[str, ...] | None = None,
++    ) -> None:
+         self.lgb = lgb
++        self._frame = frame
++        self._keys = keys
++        self._has_having = False
+ 
+     def having(self, *predicates: IntoExpr | Iterable[IntoExpr]) -> LazyGroupBy:
+         """
+@@ -73,6 +84,7 @@
+         """
+         pyexprs = parse_into_list_of_expressions(*predicates)
+         self.lgb = self.lgb.having(pyexprs)
++        self._has_having |= bool(pyexprs)
+         return self
+ 
+     def agg(
+@@ -313,6 +325,111 @@
+         """
+         return wrap_ldf(self.lgb.head(n))
+ 
++    def nth(
++        self,
++        n: int | list[int] | tuple[int, ...],
++        *,
++        dropna: Literal["any", "all"] | None = None,
++    ) -> LazyFrame:
++        """
++        Select original rows by their position within each group.
++
++        Parameters
++        ----------
++        n
++            A Python integer or list/tuple of integers fitting signed 64-bit range.
++            Positions are zero-based; negative positions count from the end.
++            Out-of-bounds positions are skipped. Repeated positions and aliases
++            select each row only once. Booleans are not accepted.
++        dropna
++            Exclude rows with any or all values missing before assigning positions.
++            Missing values are top-level nulls or floating NaNs across all original
++            columns, including keys. None keeps every row eligible.
++
++        Returns
++        -------
++        LazyFrame
++            Selected rows in original input order, with unchanged columns and dtypes.
++
++        Notes
++        -----
++        Supports ordinary grouping by distinct existing column names. Expressions,
++        selectors, named keys, generators, rolling/dynamic groups, and groups with
++        having predicates are not supported. Key dtypes follow native grouping
++        support. Schema resolution is allowed; constructing the plan executes no rows.
++
++        Examples
++        --------
++        >>> lf = pl.LazyFrame({"value": [10, 20, 30], "key": ["a", "b", "a"]})
++        >>> lf.group_by("key").nth(-1).collect()
++        shape: (2, 2)
++        ┌───────┬─────┐
++        │ value ┆ key │
++        │ ---   ┆ --- │
++        │ i64   ┆ str │
++        ╞═══════╪═════╡
++        │ 20    ┆ b   │
++        │ 30    ┆ a   │
++        └───────┴─────┘
++        """
++        if isinstance(n, int):
++            positions = [n]
++        elif isinstance(n, (list, tuple)):
++            positions = list(n)
++        else:
++            msg = "n must be a Python int or a list/tuple of Python ints"
++            raise TypeError(msg)
++        for value in positions:
++            if not isinstance(value, int) or isinstance(value, bool):
++                msg = "n must contain only Python ints, not booleans"
++                raise TypeError(msg)
++            if not -(2**63) <= value < 2**63:
++                msg = f"position does not fit a signed 64-bit integer: {value}"
++                raise ValueError(msg)
++        if dropna is not None and (
++            not isinstance(dropna, str) or dropna not in ("any", "all")
++        ):
++            msg = "dropna must be None, 'any', or 'all'"
++            raise ValueError(msg)
++
++        if self._frame is None or self._keys is None or self._has_having:
++            msg = "nth requires ordinary column-name grouping without having predicates"
++            raise NotImplementedError(msg)
++        keys = self._keys
++        if not keys or len(set(keys)) != len(keys):
++            msg = "nth requires at least one key and no duplicate keys"
++            raise ValueError(msg)
++        frame = self._frame
++        schema = frame.collect_schema()
++        for key in keys:
++            if key not in schema:
++                raise ColumnNotFoundError(key)
++        if not positions:
++            return frame.limit(0)
++
++        if dropna is not None:
++            missing = []
++            for name, dtype in schema.items():
++                column = F.col(name)
++                is_missing = column.is_null()
++                if dtype.is_float():
++                    is_missing = is_missing | column.is_nan().fill_null(False)
++                missing.append(is_missing)
++            excluded = (
++                F.any_horizontal(missing)
++                if dropna == "any"
++                else F.all_horizontal(missing)
++            )
++            frame = frame.filter(~excluded)
++
++        # Positive and negative positions identify the same original rows. Filtering
++        # preserves input order and naturally deduplicates repeated requests/aliases.
++        position = F.int_range(F.len(), dtype=Int64).over(keys)
++        size = F.len().cast(Int64).over(keys)
++        return frame.filter(
++            position.is_in(positions) | (position - size).is_in(positions)
++        )
++
+     def tail(self, n: int = 5) -> LazyFrame:
+         """
+         Get the last `n` rows of each group.
+diff --git a/py-polars/src/polars/lazyframe/frame.py b/py-polars/src/polars/lazyframe/frame.py
+--- a/py-polars/src/polars/lazyframe/frame.py
++++ b/py-polars/src/polars/lazyframe/frame.py
+@@ -5311,7 +5311,15 @@
+                 raise TypeError(msg)
+         exprs = parse_into_list_of_expressions(*by, **named_by)
+         lgb = self._ldf.group_by(exprs, maintain_order)
+-        return LazyGroupBy(lgb)
++        # Keep only the plain column-name context needed by nth. Do not consume
++        # generators again or restrict the inputs accepted by existing aggregations.
++        key_inputs = by[0] if len(by) == 1 and isinstance(by[0], (list, tuple)) else by
++        keys = None
++        if not named_by:
++            names = tuple(key for key in key_inputs if isinstance(key, str))
++            if len(names) == len(key_inputs):
++                keys = names
++        return LazyGroupBy(lgb, frame=self, keys=keys)
+ 
+     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
+     def rolling(
+diff --git a/py-polars/docs/source/reference/dataframe/group_by.rst b/py-polars/docs/source/reference/dataframe/group_by.rst
+--- a/py-polars/docs/source/reference/dataframe/group_by.rst
++++ b/py-polars/docs/source/reference/dataframe/group_by.rst
+@@ -15,6 +15,7 @@
+     GroupBy.first
+     GroupBy.having
+     GroupBy.head
++    GroupBy.nth
+     GroupBy.last
+     GroupBy.len
+     GroupBy.map_groups
+diff --git a/py-polars/docs/source/reference/lazyframe/group_by.rst b/py-polars/docs/source/reference/lazyframe/group_by.rst
+--- a/py-polars/docs/source/reference/lazyframe/group_by.rst
++++ b/py-polars/docs/source/reference/lazyframe/group_by.rst
+@@ -15,6 +15,7 @@
+     LazyGroupBy.first
+     LazyGroupBy.having
+     LazyGroupBy.head
++    LazyGroupBy.nth
+     LazyGroupBy.last
+     LazyGroupBy.len
+     LazyGroupBy.map_groups
